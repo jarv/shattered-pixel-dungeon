@@ -31,6 +31,7 @@ import com.badlogic.gdx.utils.Os;
 import com.badlogic.gdx.utils.SharedLibraryLoader;
 import com.shatteredpixel.shatteredpixeldungeon.SPDSettings;
 import com.shatteredpixel.shatteredpixeldungeon.ShatteredPixelDungeon;
+import com.shatteredpixel.shatteredpixeldungeon.desktop.api.PlayerApi;
 import com.shatteredpixel.shatteredpixeldungeon.services.news.News;
 import com.shatteredpixel.shatteredpixeldungeon.services.news.NewsImpl;
 import com.shatteredpixel.shatteredpixeldungeon.services.updates.UpdateImpl;
@@ -137,6 +138,17 @@ public class DesktopLauncher {
 		
 		config.setTitle( title );
 
+		// Optional server-streaming settings; normal desktop launches are unchanged.
+		String renderFps = System.getenv("SPD_RENDER_FPS");
+		if (renderFps != null && !renderFps.isEmpty()) {
+			int fps = Integer.parseInt(renderFps);
+			if (fps < 1 || fps > 240) throw new IllegalArgumentException("Invalid SPD_RENDER_FPS (1-240)");
+			config.setForegroundFPS(fps);
+			config.setIdleFPS(fps);
+			config.useVsync(false);
+		}
+		config.disableAudio("1".equals(System.getenv("SPD_AUDIO_DISABLED")));
+
 		//if I were implementing this from scratch I would use the full implementation title for saves
 		// (e.g. /.shatteredpixel/shatteredpixeldungeon), but we have too much existing save
 		// date to worry about transferring at this point.
@@ -168,6 +180,15 @@ public class DesktopLauncher {
 			baseFileType = Files.FileType.Absolute;
 		}
 
+		// Optional separate profile for automated play; do not overwrite normal saves.
+		String apiDataDir = System.getenv("SPD_DATA_DIR");
+		if (apiDataDir != null && !apiDataDir.isEmpty()) {
+			if (!new java.io.File(apiDataDir).isAbsolute()) {
+				throw new IllegalArgumentException("SPD_DATA_DIR must be an absolute path");
+			}
+			basePath = apiDataDir + "/";
+			baseFileType = Files.FileType.Absolute;
+		}
 		config.setPreferencesConfig( basePath, baseFileType );
 		SPDSettings.set( new Lwjgl3Preferences( new Lwjgl3FileHandle(basePath + SPDSettings.DEFAULT_PREFS_FILE, baseFileType) ));
 		FileUtils.setDefaultFileProperties( baseFileType, basePath );
@@ -189,6 +210,36 @@ public class DesktopLauncher {
 		config.setWindowIcon("icons/icon_16.png", "icons/icon_32.png", "icons/icon_48.png",
 				"icons/icon_64.png", "icons/icon_128.png", "icons/icon_256.png");
 
-		new Lwjgl3Application(new ShatteredPixelDungeon(new DesktopPlatformSupport()), config);
+		String apiPort = System.getenv("SPD_API_PORT");
+		if (apiPort == null || apiPort.isEmpty()) {
+			new Lwjgl3Application(new ShatteredPixelDungeon(new DesktopPlatformSupport()), config);
+		} else {
+			int port = Integer.parseInt(apiPort);
+			if (port < 1 || port > 65535) throw new IllegalArgumentException("Invalid SPD_API_PORT");
+			// Evaluation can use the same renderer/rules without taking desktop focus.
+			config.setInitialVisible(!"1".equals(System.getenv("SPD_API_HIDDEN")));
+			new Lwjgl3Application(new ShatteredPixelDungeon(new DesktopPlatformSupport()) {
+				private PlayerApi api;
+
+				@Override public void create() {
+					super.create();
+					try {
+						api = new PlayerApi(port, System.getenv("SPD_API_TOKEN"));
+					} catch (java.io.IOException e) {
+						throw new RuntimeException("Could not start player API", e);
+					}
+				}
+
+				@Override public void render() {
+					super.render();
+					if (api != null) api.tick();
+				}
+
+				@Override public void dispose() {
+					if (api != null) api.close();
+					super.dispose();
+				}
+			}, config);
+		}
 	}
 }

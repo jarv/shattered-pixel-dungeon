@@ -35,6 +35,11 @@ public class Group extends Gizmo {
 	// Accessing it is a little faster,
 	// than calling members.getSize()
 	public int length;
+
+	/** A defensive copy for read-only UI/accessibility inspection. */
+	public synchronized Gizmo[] membersSnapshot() {
+		return members == null ? new Gizmo[0] : members.toArray(new Gizmo[0]);
+	}
 	
 	public Group() {
 		members = new ArrayList<>();

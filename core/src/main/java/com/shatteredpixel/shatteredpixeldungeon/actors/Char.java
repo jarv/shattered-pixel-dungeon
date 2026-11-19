@@ -1322,6 +1322,11 @@ public abstract class Char extends Actor {
 			previousPos = -1;
 		}
 		pos = step;
+		// Optional API receipt of the hero's actual public position, before
+		// occupancy effects can interrupt or displace this move.
+		if (this == Dungeon.hero) {
+			com.shatteredpixel.shatteredpixeldungeon.ui.ApiUI.heroMoved(pos);
+		}
 		
 		if (this != Dungeon.hero) {
 			sprite.visible = Dungeon.level.heroFOV[pos];

@@ -68,6 +68,7 @@ public class ScrollOfMagicMapping extends Scroll {
 						noticed = true;
 					}
 				}
+				com.shatteredpixel.shatteredpixeldungeon.ui.ApiUI.mappedCell(i);
 			}
 		}
 		GameScene.updateFog();

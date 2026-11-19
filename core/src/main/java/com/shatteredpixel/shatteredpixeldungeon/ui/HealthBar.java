@@ -42,6 +42,12 @@ public class HealthBar extends Component {
 	private float health;
 	private float shield;
 	private float incomingDOT;
+
+	/** The filled/total pixel widths visible in the rendered bar, not raw HP. */
+	public int[] apiHealthPixels() {
+		float zoom = camera() == null ? 1f : camera().zoom;
+		return new int[]{Math.round(Hp.width() * zoom), Math.round(width * zoom)};
+	}
 	
 	@Override
 	protected void createChildren() {

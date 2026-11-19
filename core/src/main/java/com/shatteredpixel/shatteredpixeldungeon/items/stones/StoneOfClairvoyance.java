@@ -74,6 +74,7 @@ public class StoneOfClairvoyance extends Runestone {
 						noticed = true;
 					}
 				}
+				com.shatteredpixel.shatteredpixeldungeon.ui.ApiUI.mappedCell(curr);
 				
 			}
 		}

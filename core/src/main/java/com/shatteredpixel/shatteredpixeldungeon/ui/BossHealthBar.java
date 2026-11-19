@@ -56,6 +56,10 @@ public class BossHealthBar extends Component {
 	private static String asset = Assets.Interfaces.BOSSHP;
 
 	private static BossHealthBar instance;
+
+	public static String apiHealthText() {
+		return instance != null && instance.isVisible() ? instance.hpText.text() : null;
+	}
 	private static boolean bleeding;
 
 	private boolean large;

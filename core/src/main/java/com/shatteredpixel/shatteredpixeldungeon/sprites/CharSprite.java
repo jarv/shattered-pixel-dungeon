@@ -116,7 +116,15 @@ public class CharSprite extends MovieClip implements Tweener.Listener, MovieClip
 	protected Flare aura;
 	
 	protected EmoIcon emo;
+
+	public boolean apiSleepIconVisible() {
+		return emo instanceof EmoIcon.Sleep && emo.isVisible();
+	}
 	protected CharHealthIndicator health;
+
+	public int[] apiHealthPixels() {
+		return health != null && health.isVisible() ? health.apiHealthPixels() : null;
+	}
 
 	private Tweener jumpTweener;
 	private Callback jumpCallback;

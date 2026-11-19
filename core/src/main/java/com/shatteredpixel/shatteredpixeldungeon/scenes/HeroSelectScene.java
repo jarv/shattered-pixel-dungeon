@@ -229,7 +229,9 @@ public class HeroSelectScene extends PixelScene {
 		updateOptionsColor();
 		btnOptions.visible = false;
 
-		if(!SPDSettings.intro()){
+		// Debug runs use fresh profiles, but still need the ordinary challenge UI.
+		// Keep the first-run tutorial setting and release-build behavior unchanged.
+		if(!SPDSettings.intro() || DeviceCompat.isDebug()){
 			add(btnOptions);
 		}
 
@@ -454,7 +456,7 @@ public class HeroSelectScene extends PixelScene {
 			infoButton.setPos(heroName.right(), heroName.top() + (heroName.height() - infoButton.height())/2f);
 			align(infoButton);
 
-			btnOptions.visible = btnOptions.active = !SPDSettings.intro();
+			btnOptions.visible = btnOptions.active = !SPDSettings.intro() || DeviceCompat.isDebug();
 
 		} else {
 			title.visible = false;
@@ -469,7 +471,7 @@ public class HeroSelectScene extends PixelScene {
 			infoButton.visible = infoButton.active = true;
 			infoButton.setPos(startBtn.right(), startBtn.top());
 
-			btnOptions.visible = btnOptions.active = !SPDSettings.intro();
+			btnOptions.visible = btnOptions.active = !SPDSettings.intro() || DeviceCompat.isDebug();
 			btnOptions.setPos(startBtn.left()-btnOptions.width(), startBtn.top());
 
 			optionsPane.setPos(heroBtns.get(0).left(), startBtn.top() - optionsPane.height() - 2);
@@ -576,6 +578,11 @@ public class HeroSelectScene extends PixelScene {
 
 			icon(new Image(cl.spritesheet(), 0, 90, 12, 15));
 
+		}
+
+		@Override
+		protected String hoverText() {
+			return cl.title();
 		}
 
 		@Override

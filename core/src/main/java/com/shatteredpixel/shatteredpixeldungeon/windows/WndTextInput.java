@@ -41,6 +41,18 @@ public class WndTextInput extends Window {
 	private static final int BUTTON_HEIGHT = 16;
 
 	protected TextInput textBox;
+	private int apiMaxLength;
+
+	/** Ordinary editable UI text, not a backing settings/profile value. */
+	public String apiText() {
+		return textBox.getText();
+	}
+
+	public void apiSetText(String text) {
+		if (text.length() > apiMaxLength) throw new IllegalArgumentException("Text exceeds this field's limit");
+		textBox.setText(text);
+		textBox.onChanged();
+	}
 
 	protected RedButton btnCopy;
 	protected RedButton btnPaste;
@@ -48,6 +60,7 @@ public class WndTextInput extends Window {
 	public WndTextInput(final String title, final String body, final String initialValue, final int maxLength,
 	                           final boolean multiLine, final String posTxt, final String negTxt) {
 		super();
+		apiMaxLength = maxLength;
 
 		final int width;
 		if (PixelScene.landscape() && (multiLine || body != null)) {

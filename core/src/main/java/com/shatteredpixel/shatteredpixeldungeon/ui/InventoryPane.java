@@ -401,6 +401,16 @@ public class InventoryPane extends Component {
 		return selector != null;
 	}
 
+	/** Same cancellation as clicking outside this selection pane. */
+	public void apiCancelSelection() {
+		if (selector != null) {
+			GameScene.centerNextWndOnInvPane();
+			selector.onSelect(null);
+			selector = null;
+			updateInventory();
+		}
+	}
+
 	public static void clearTargetingSlot(){
 		targetingSlot = null;
 	}

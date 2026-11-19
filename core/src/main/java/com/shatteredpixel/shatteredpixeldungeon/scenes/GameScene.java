@@ -1636,6 +1636,23 @@ public class GameScene extends PixelScene {
 	public static void handleCell( int cell ) {
 		cellSelector.select( cell, PointerEvent.LEFT );
 	}
+
+	/** The same prompt shown above the map, or null during normal play. */
+	public static String apiTargetPrompt() {
+		if (cellSelector == null || cellSelector.listener == null
+				|| cellSelector.listener == defaultCellListener) return null;
+		return cellSelector.listener.prompt();
+	}
+
+	/** Actor.processing() remains true while the hero is waiting for input. */
+	public static boolean apiActorIdle() {
+		return actorThread != null && actorThread.getState() == Thread.State.WAITING;
+	}
+
+	public static InventoryPane apiInventorySelectionPane() {
+		return scene != null && scene.inventory != null && scene.inventory.isSelecting()
+				&& scene.inventory.isVisible() ? scene.inventory : null;
+	}
 	
 	public static void selectCell( CellSelector.Listener listener ) {
 		if (cellSelector.listener != null && cellSelector.listener != defaultCellListener){

@@ -47,6 +47,12 @@ public class GooSprite extends MobSprite {
 	private int pumpUpEmitterDist = 0;
 	private int lastPumpUpPos = -1;
 	private ArrayList<Emitter> pumpUpEmitters = new ArrayList<>();
+	private ArrayList<Integer> pumpUpCells = new ArrayList<>();
+
+	/** Tiles actually marked by the visible pump-up particle telegraph. */
+	public ArrayList<Integer> apiWarningCells() {
+		return new ArrayList<>(pumpUpCells);
+	}
 
 	public GooSprite() {
 		super();
@@ -115,12 +121,14 @@ public class GooSprite extends MobSprite {
 					Emitter e = CellEmitter.get(i);
 					e.pour(GooParticle.FACTORY, 0.04f);
 					pumpUpEmitters.add(e);
+					pumpUpCells.add(i);
 				}
 			}
 		}
 	}
 
 	public void clearEmitters(){
+		pumpUpCells.clear();
 		for (Emitter e : pumpUpEmitters){
 			e.on = false;
 		}
@@ -128,6 +136,7 @@ public class GooSprite extends MobSprite {
 	}
 
 	public void triggerEmitters(){
+		pumpUpCells.clear();
 		for (Emitter e : pumpUpEmitters){
 			e.burst(ElmoParticle.FACTORY, 10);
 		}

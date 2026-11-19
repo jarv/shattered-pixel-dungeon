@@ -105,6 +105,11 @@ public class AlchemyScene extends PixelScene {
 
 	private Image energyIcon;
 	private RenderedTextBlock energyLeft;
+
+	/** Exact rendered energy label, including the toolkit's displayed contribution. */
+	public String apiEnergyText() {
+		return energyLeft == null ? "" : energyLeft.text();
+	}
 	private IconButton energyAdd;
 	private boolean energyAddBlinking = false;
 
@@ -1101,7 +1106,9 @@ public class AlchemyScene extends PixelScene {
 
 				@Override
 				protected String hoverText() {
-					return Messages.get(AlchemyScene.class, "craft");
+					// Associate the ordinary craft control with its rendered output icon.
+					return Messages.get(AlchemyScene.class, "craft")
+							+ outputs[slot].previewLabel;
 				}
 
 				@Override
@@ -1162,6 +1169,8 @@ public class AlchemyScene extends PixelScene {
 
 	private class OutputSlot extends Component {
 
+		private String previewLabel = "";
+
 		protected NinePatch bg;
 		protected ItemSlot slot;
 
@@ -1196,6 +1205,7 @@ public class AlchemyScene extends PixelScene {
 		}
 
 		public void item( Item item ) {
+			previewLabel = item == null ? "" : ": " + item.title();
 			slot.item(item);
 		}
 	}

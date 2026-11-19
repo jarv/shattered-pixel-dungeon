@@ -192,6 +192,12 @@ public class StoneOfIntuition extends InventoryStone {
 
 				IconButton btn = new IconButton(){
 					@Override
+					protected String hoverText() {
+						// The candidate is already represented by its public item icon.
+						return Messages.titleCase(Messages.get(i, "name"));
+					}
+
+					@Override
 					protected void onClick() {
 						curGuess = i;
 						guess.visible = true;
