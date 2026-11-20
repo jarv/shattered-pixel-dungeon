@@ -4,6 +4,61 @@ The desktop game can expose a token-protected JSON API on **127.0.0.1 only**.
 It runs the normal graphical game, with normal rules, animations, and saves.
 There is no headless simulator or deterministic replay requirement.
 
+## Generated API reference
+
+The wire contract is defined by the runtime Java DTOs in
+`desktop/src/main/java/com/shatteredpixel/shatteredpixeldungeon/desktop/api/ApiModels.java`
+and the endpoint annotations in `PlayerApi.java`. There is no hand-maintained
+OpenAPI YAML file.
+
+With a Gradle-compatible JDK (Java 21 works):
+
+```sh
+./gradlew :desktop:apiDocs --console=plain
+# Open desktop/build/player-api/html/index.html in a browser.
+# Or publish that directory using any static web host.
+```
+
+This generates:
+
+- `desktop/build/player-api/openapi.yaml` and `openapi.json`: machine-readable contract.
+- `desktop/build/player-api/html/index.html`: static endpoint and model reference.
+
+Use `:desktop:generateOpenApi` to build only the specification. Neither task
+starts the game, needs a display, or starts an HTTP server. Generation tooling is
+build-time only and is not shipped in the game. The HTML reference is for reading;
+browser calls to the live API remain deliberately unsupported.
+
+### Version 1 contract
+
+All observations and error responses contain `api_version: 1`. Update the Python
+client and game together when changing API versions. Optional null fields are
+**omitted**, so clients should use optional lookups rather than expecting JSON
+null (for example `state.get("boss_health_text")`).
+
+Action requests require a positive integer `observation_id`, a recognized `type`,
+and all fields required for that variant. Unknown fields, duplicate JSON keys,
+trailing JSON, and scalar coercion (for example `"cell": "123"`) are rejected.
+Requests are limited to 8192 bytes.
+
+Errors have a stable code plus a human-readable message:
+
+```json
+{
+  "api_version": 1,
+  "error": {
+    "code": "DECISION_TIMEOUT",
+    "message": "Timed out waiting for a decision point; read /state before continuing; do not blindly retry.",
+    "action_may_have_executed": true
+  }
+}
+```
+
+The Python client's `PlayerAPIError` exposes `status`, `code`, `message`, and
+`action_may_have_executed`. It never automatically retries requests and clears
+cached observation handles after errors. Obtain a fresh state before deciding
+what to do next.
+
 ## Launch
 
 Use a Gradle-compatible JDK (Java 21 works; Java 27 currently does not):
@@ -89,7 +144,7 @@ curl -H "Authorization: Bearer $SPD_API_TOKEN" -H 'Content-Type: application/jso
 | `{"type":"button","id":"button-3"}` | Click an advertised visible/enabled UI button |
 | `{"type":"text","text":"ABC-DEF-GHI"}` | Replace text in the currently visible text-entry dialog, respecting its length limit; does not submit it |
 | `{"type":"back"}` | Normal window back/cancel, or cancel targeting/pathfinding |
-| `{"type":"talent","name":"backup barrier"}` | Spend an available tier 1/2 talent point using an advertised name |
+| `{"type":"talent","name":"backup barrier"}` | Spend an available talent point using an advertised name |
 
 Add `observation_id` when using raw HTTP; the Python client supplies it.
 Use `ui.buttons` for dialogue choices, inventory selectors, hero selection, talents,
@@ -107,7 +162,7 @@ complete description of every graphical effect. It provides:
 
 - Scene/status, rendered UI text and enabled buttons. The topmost window is the
   input surface while a modal is open.
-- Hero HP, level, strength, gold, displayed buff descriptions, and tier 1/2 talent choices.
+- Hero HP, level, strength, gold, displayed buff descriptions, and currently exposed talent choices.
 - `evaluation_stats` contains only own-run accounting: exact hero-panel
   `experience`/`experience_to_level` and cumulative `elapsed_turns` (normalized
   run duration plus currently elapsed time). No individual actor schedules or
@@ -144,7 +199,7 @@ complete description of every graphical effect. It provides:
   Visibility follows the game's `heroFOV`, including Mind Vision and awareness:
   sensed creatures' current locations are included while revealed, and disappear
   from `objects` when the effect expires unless still visible normally.
-- `boss_health_text` is the text in the displayed boss bar (or null).
+- `boss_health_text` is the text in the displayed boss bar (omitted when absent).
   `danger_cells` contains visible tiles marked by Goo's pump-up particle warning,
   not a prediction from hidden AI state.
 - Visible terrain, plants and discovered traps. Secret doors look like walls and
@@ -167,8 +222,8 @@ Known limitations:
   Magic-mapped tiles from loaded saves are reconstructed once; ordinary explored
   tiles from a loaded save are not reconstructed.
   Changing/reloading levels may reset that conservative memory.
-- Custom graphical decorations and non-button
-  widgets (for example text entry and sliders) are not fully represented.
+- Custom graphical decorations and non-button widgets such as sliders are not
+  fully represented. Visible text-entry dialogs are supported.
 - Some icon-only controls have empty labels. Not every menu has been validated.
   Manual play can handle unsupported UI; then read a fresh state.
 - The interface exposes player-accessible inventory/inspection text without
@@ -191,3 +246,23 @@ python3 tools/smoke_player_api.py
 
 The smoke check covers observations, waiting, searching, inspection/back, inventory
 targeting/cancel, movement, stale observation rejection, and token authentication.
+
+### Maintaining the contract
+
+Add or change fields on the actual runtime DTOs, with `@Schema` descriptions and
+requiredness. Update the capture/dispatch code to use those fields. New action
+variants must be registered with Jackson's `@JsonSubTypes` and the matching
+OpenAPI discriminator annotations. Do not add game-object references to DTOs.
+Jackson serializes only the explicitly populated API models, never the game's
+object graph.
+
+Endpoint JAX-RS annotations are metadata for the build-time Swagger reader; they
+do not introduce a JAX-RS server. `GenerateOpenApi` flattens Swagger's inherited
+action schemas to avoid circular composition and restricts variant `type` values
+using the generated discriminator mapping.
+
+Run `:desktop:test` after changes. Tests exercise all action variants, strict
+request decoding, real loopback HTTP rejections, serialized response/schema
+conformance, movement receipts, and conservative information boundaries.
+Behavioral prose (including decision points and what counts as visible information)
+still needs deliberate maintenance; annotations cannot infer those guarantees.

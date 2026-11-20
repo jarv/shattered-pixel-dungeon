@@ -1,6 +1,6 @@
 package com.shatteredpixel.shatteredpixeldungeon.desktop.api;
 
-import com.badlogic.gdx.utils.JsonValue;
+import com.shatteredpixel.shatteredpixeldungeon.desktop.api.ApiModels.MovementReceipt;
 import java.util.ArrayList;
 
 /** Actual public hero positions during one ordinary cell input; never a planned path. */
@@ -28,18 +28,16 @@ final class MovementTrace {
 		cells.add(cell);
 	}
 
-	synchronized JsonValue finish(int endDepth, int endBranch, int cell) {
+	synchronized MovementReceipt finish(int endDepth, int endBranch, int cell) {
 		if (!active) return null;
 		boolean same = endDepth == depth && endBranch == branch;
 		if (same) moved(cell);
-		JsonValue result = PlayerObservation.object();
-		PlayerObservation.put(result, "depth", depth);
-		PlayerObservation.put(result, "branch", branch);
-		PlayerObservation.put(result, "same_floor", same);
-		PlayerObservation.put(result, "truncated", truncated);
-		JsonValue positions = PlayerObservation.array();
-		for (int position : cells) positions.addChild(new JsonValue((long)position));
-		result.addChild("cells", positions);
+		MovementReceipt result = new MovementReceipt();
+		result.depth = depth;
+		result.branch = branch;
+		result.same_floor = same;
+		result.truncated = truncated;
+		result.cells.addAll(cells);
 		reset();
 		return result;
 	}

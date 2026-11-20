@@ -5,6 +5,7 @@ import com.shatteredpixel.shatteredpixeldungeon.items.Item;
 import com.shatteredpixel.shatteredpixeldungeon.ui.ApiUI;
 import com.watabou.noosa.Group;
 import com.badlogic.gdx.utils.JsonValue;
+import com.badlogic.gdx.utils.JsonReader;
 import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
 import com.shatteredpixel.shatteredpixeldungeon.levels.Level;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
@@ -52,15 +53,25 @@ public class PlayerObservationTest {
 	}
 
 	private JsonValue tile(PlayerObservation observation, int cell) {
-		for (JsonValue tile : observation.captureMap(level).get("cells")) {
+		for (JsonValue tile : json(observation.captureMap(level)).get("cells")) {
 			if (tile.getInt("cell") == cell) return tile;
 		}
 		return null;
 	}
 
+	private static JsonValue json(Object value) {
+		try {
+			if (value instanceof ApiModels.MapState) ApiContractTest.assertConforms("MapState", value);
+			if (value instanceof ApiModels.EvaluationStats) ApiContractTest.assertConforms("EvaluationStats", value);
+			return new JsonReader().parse(ApiJson.MAPPER.writeValueAsString(value));
+		} catch (java.io.IOException e) {
+			throw new AssertionError(e);
+		}
+	}
+
 	@Test public void evaluationStatsContainOnlyOwnExperienceAndElapsedRunTime() {
 		Dungeon.hero.exp = 3;
-		JsonValue stats = PlayerObservation.evaluationStats(Dungeon.hero);
+		JsonValue stats = json(PlayerObservation.evaluationStats(Dungeon.hero));
 		assertEquals(3, stats.getInt("experience"));
 		assertEquals(Dungeon.hero.maxExp(), stats.getInt("experience_to_level"));
 		assertEquals(true, stats.has("elapsed_turns"));
@@ -160,7 +171,7 @@ public class PlayerObservationTest {
 		};
 		visible.attachTo(rat);
 		hidden.attachTo(rat);
-		JsonValue icons = PlayerObservation.inspectionStatusIcons(rat);
+		JsonValue icons = json(PlayerObservation.inspectionStatusIcons(rat));
 		assertEquals(1, icons.size);
 		assertEquals("Corruption", icons.getString(0));
 	}

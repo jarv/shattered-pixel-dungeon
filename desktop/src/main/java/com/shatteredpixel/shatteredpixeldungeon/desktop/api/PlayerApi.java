@@ -1,8 +1,21 @@
 package com.shatteredpixel.shatteredpixeldungeon.desktop.api;
 
-import com.badlogic.gdx.utils.JsonReader;
-import com.badlogic.gdx.utils.JsonValue;
-import com.badlogic.gdx.utils.JsonWriter;
+import com.shatteredpixel.shatteredpixeldungeon.desktop.api.ApiModels.*;
+import io.swagger.v3.oas.annotations.OpenAPIDefinition;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.info.Info;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.security.SecurityScheme;
+import io.swagger.v3.oas.annotations.enums.SecuritySchemeType;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.Consumes;
 import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
 import com.shatteredpixel.shatteredpixeldungeon.items.Item;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Talent;
@@ -31,10 +44,38 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import static com.shatteredpixel.shatteredpixeldungeon.desktop.api.PlayerObservation.*;
+import static com.shatteredpixel.shatteredpixeldungeon.desktop.api.ApiModels.ErrorCode.*;
 
 /** Opt-in loopback server. All game access happens in tick(), on the render thread. */
+@Path("/")
+@Produces("application/json")
+@OpenAPIDefinition(info = @Info(title = "Shattered Pixel Dungeon player API", version = "1",
+		description = "Experimental, opt-in loopback API for the normal graphical game. "
+				+ "All game access runs at settled decision points. Only player-visible information is exported. "
+				+ "Optional null fields are omitted. Browser origins are rejected; this reference is read-only."))
+@SecurityScheme(name = "bearerAuth", type = SecuritySchemeType.HTTP, scheme = "bearer")
+@SecurityRequirement(name = "bearerAuth")
+@ApiResponses({
+		@ApiResponse(responseCode = "200", description = "A fresh observation at a decision point.",
+				content = @Content(schema = @Schema(implementation = Observation.class))),
+		@ApiResponse(responseCode = "401", description = "UNAUTHORIZED: bearer token missing or incorrect.",
+				content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+		@ApiResponse(responseCode = "403", description = "BROWSER_ORIGIN: Origin header is not supported.",
+				content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+		@ApiResponse(responseCode = "404", description = "NOT_FOUND: unsupported path or HTTP method.",
+				content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+		@ApiResponse(responseCode = "500", description = "INTERNAL_ERROR: read /state before continuing.",
+				content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+		@ApiResponse(responseCode = "503", description = "INTERRUPTED: server interrupted while waiting.",
+				content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+		@ApiResponse(responseCode = "504", description = "DECISION_TIMEOUT: no decision point within 30 seconds. "
+				+ "An action may already have executed. Read /state; never blindly retry.",
+				content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+})
 public final class PlayerApi implements AutoCloseable {
 
+	public static final String STATE_PATH = "/state";
+	public static final String ACTION_PATH = "/action";
 	private static final int MAX_BODY = 8192;
 	private final HttpServer server;
 	private final ExecutorService workers = Executors.newFixedThreadPool(2, r -> {
@@ -64,57 +105,98 @@ public final class PlayerApi implements AutoCloseable {
 		System.out.println("Player API bearer token: " + token);
 	}
 
+	int port() {
+		return server.getAddress().getPort();
+	}
+
 	private void handle(HttpExchange exchange) throws IOException {
 		try {
 			String auth = exchange.getRequestHeaders().getFirst("Authorization");
 			if (auth == null || !MessageDigest.isEqual(auth.getBytes(StandardCharsets.UTF_8),
 					("Bearer " + token).getBytes(StandardCharsets.UTF_8))) {
-				reply(exchange, 401, error("Bearer token required"));
+				reply(exchange, 401, error(UNAUTHORIZED, "Bearer token required"));
 				return;
 			}
 			// A local API is not intended to be callable by arbitrary web pages.
 			if (exchange.getRequestHeaders().containsKey("Origin")) {
-				reply(exchange, 403, error("Browser origins are not supported"));
+				reply(exchange, 403, error(BROWSER_ORIGIN, "Browser origins are not supported"));
 				return;
 			}
 			String path = exchange.getRequestURI().getPath();
-			boolean action = path.equals("/action") && exchange.getRequestMethod().equals("POST");
-			if (!action && !(path.equals("/state") && exchange.getRequestMethod().equals("GET"))) {
-				reply(exchange, 404, error("Use GET /state or POST /action"));
+			boolean action = path.equals(ACTION_PATH) && exchange.getRequestMethod().equals("POST");
+			if (!action && !(path.equals(STATE_PATH) && exchange.getRequestMethod().equals("GET"))) {
+				reply(exchange, 404, error(NOT_FOUND, "Use GET /state or POST /action"));
 				return;
 			}
-			JsonValue command = null;
+			Action command = null;
 			if (action) {
 				byte[] body = exchange.getRequestBody().readNBytes(MAX_BODY + 1);
 				if (body.length > MAX_BODY) {
-					reply(exchange, 413, error("Request too large"));
+					reply(exchange, 413, error(REQUEST_TOO_LARGE, "Request too large"));
 					return;
 				}
 				try {
-					command = new JsonReader().parse(new String(body, StandardCharsets.UTF_8));
-					if (!command.isObject()) throw new IllegalArgumentException();
-				} catch (Exception e) {
-					reply(exchange, 400, error("Expected a JSON object"));
+					command = ApiJson.readAction(body);
+				} catch (IOException | IllegalArgumentException e) {
+					reply(exchange, 400, error(INVALID_REQUEST, "Invalid action JSON: check type, observation_id, and required fields"));
 					return;
 				}
 			}
-			Request request = new Request(command);
-			requests.add(request);
+			CompletableFuture<Response> result = action ? action(command) : state();
 			try {
-				Response response = request.result.get(30, TimeUnit.SECONDS);
+				Response response = result.get(30, TimeUnit.SECONDS);
 				reply(exchange, response.status, response.body);
 			} catch (TimeoutException e) {
-				request.result.cancel(false);
-				reply(exchange, 504, error("Timed out waiting for a decision point; an action may already have executed. Read /state before continuing; do not blindly retry."));
+				result.cancel(false);
+				reply(exchange, 504, new ErrorResponse(DECISION_TIMEOUT,
+						"Timed out waiting for a decision point; read /state before continuing; do not blindly retry.", action));
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
-				reply(exchange, 503, error("Server interrupted"));
+				reply(exchange, 503, new ErrorResponse(INTERRUPTED, "Server interrupted", action));
 			} catch (ExecutionException e) {
-				reply(exchange, 500, error("API request failed"));
+				reply(exchange, 500, new ErrorResponse(INTERNAL_ERROR, "API request failed", action));
 			}
 		} finally {
 			exchange.close();
 		}
+	}
+
+	// JAX-RS annotations are build-time metadata only; HttpServer calls these methods directly.
+	@GET
+	@Path(STATE_PATH)
+	@Operation(operationId = "state", summary = "Observe the current player decision point",
+			description = "Waits up to 30 seconds. Every capture invalidates previous observation IDs and handles. "
+					+ "Human input is not locked out; obtain a fresh observation after manual play.")
+	public CompletableFuture<Response> state() {
+		return enqueue(null);
+	}
+
+	@POST
+	@Path(ACTION_PATH)
+	@Consumes("application/json")
+	@Operation(operationId = "step", summary = "Perform one input and observe the result",
+			description = "Uses the latest observation_id. Serial controllers only. A cell click may start multi-step "
+					+ "pathfinding. Modal UI must be handled using its buttons, text, or back. "
+					+ "On timeout or an uncertain failure, read /state instead of repeating the action.")
+	@ApiResponses({
+			@ApiResponse(responseCode = "400", description = "INVALID_REQUEST or INVALID_ACTION: malformed or unavailable input.",
+					content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+			@ApiResponse(responseCode = "409", description = "STALE_OBSERVATION: read /state for new handles.",
+					content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+			@ApiResponse(responseCode = "413", description = "REQUEST_TOO_LARGE: body exceeds 8192 bytes.",
+					content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+	})
+	public CompletableFuture<Response> action(
+			@io.swagger.v3.oas.annotations.parameters.RequestBody(required = true,
+					content = @Content(schema = @Schema(implementation = Action.class))) Action command) {
+		if (command == null) throw new IllegalArgumentException("Action required");
+		return enqueue(command);
+	}
+
+	private CompletableFuture<Response> enqueue(Action command) {
+		Request request = new Request(command);
+		requests.add(request);
+		return request.result;
 	}
 
 	/** Call after each normal game frame; never from an HTTP thread. */
@@ -136,12 +218,12 @@ public final class PlayerApi implements AutoCloseable {
 			return;
 		}
 		try {
-			if (request.command.getLong("observation_id", -1) != revision || revision == 0) {
-				request.result.complete(new Response(409, error("Stale observation_id. Read /state first.")));
+			if (request.command.observation_id != revision || revision == 0) {
+				request.result.complete(new Response(409, error(STALE_OBSERVATION, "Stale observation_id. Read /state first.")));
 				return;
 			}
 			movement.reset();
-			if (request.command.getString("type", "").equals("cell") && Dungeon.hero != null) {
+			if (request.command instanceof CellAction && Dungeon.hero != null) {
 				movement.begin(Dungeon.depth, Dungeon.branch, Dungeon.hero.pos);
 			}
 			dispatch(request.command);
@@ -149,13 +231,14 @@ public final class PlayerApi implements AutoCloseable {
 			revision++;
 			pending = request;
 			dispatchedFrame = frame;
-		} catch (IllegalArgumentException e) {
+		} catch (InvalidActionException e) {
 			movement.reset();
-			request.result.complete(new Response(400, error(e.getMessage())));
+			request.result.complete(new Response(400, error(INVALID_ACTION, e.getMessage())));
 		} catch (Exception e) {
 			movement.reset();
 			Game.reportException(e);
-			request.result.complete(new Response(500, error("Action failed; read /state before continuing")));
+			request.result.complete(new Response(500, new ErrorResponse(INTERNAL_ERROR,
+					"Action failed; read /state before continuing", true)));
 		}
 	}
 
@@ -168,108 +251,103 @@ public final class PlayerApi implements AutoCloseable {
 
 	private void capture(Request request) {
 		try {
-			JsonValue state = observation.capture(++revision);
+			Observation state = observation.capture(++revision);
 			if (request.command != null && Dungeon.hero != null) {
-				JsonValue trace = movement.finish(Dungeon.depth, Dungeon.branch, Dungeon.hero.pos);
-				if (trace != null) state.addChild("movement_trace", trace);
+				state.movement_trace = movement.finish(Dungeon.depth, Dungeon.branch, Dungeon.hero.pos);
 			}
 			request.result.complete(new Response(200, state));
 		} catch (Exception e) {
 			movement.reset();
 			Game.reportException(e);
-			request.result.complete(new Response(500, error("Observation failed")));
+			request.result.complete(new Response(500, new ErrorResponse(INTERNAL_ERROR,
+					"Observation failed; read /state before continuing", request.command != null)));
 		}
 	}
 
-	private void dispatch(JsonValue command) {
-		String type = command.getString("type", "");
+	private void dispatch(Action command) {
 		Gizmo root = inputRoot();
-		if (type.equals("text")) {
+		if (command instanceof TextAction) {
 			if (!(root instanceof com.shatteredpixel.shatteredpixeldungeon.windows.WndTextInput)) {
-				throw new IllegalArgumentException("No visible text-entry dialog");
+				throw new InvalidActionException("No visible text-entry dialog");
 			}
-			String text = command.getString("text", "");
-			if (text.length() > 200) throw new IllegalArgumentException("Text entry is too long");
+			String text = ((TextAction) command).text;
 			((com.shatteredpixel.shatteredpixeldungeon.windows.WndTextInput)root).apiSetText(text);
 			return;
 		}
-		if (type.equals("button")) {
-			Button button = observation.buttons.get(command.getString("id", ""));
+		if (command instanceof ButtonAction) {
+			Button button = observation.buttons.get(((ButtonAction) command).id);
 			if (button == null || !ApiUI.buttons(root).contains(button)) {
-				throw new IllegalArgumentException("Button is no longer available; read /state");
+				throw new InvalidActionException("Button is no longer available; read /state");
 			}
 			ApiUI.click(button);
 			return;
 		}
-		if (type.equals("back")) {
+		if (command instanceof BackAction) {
 			if (root instanceof Window) ((Window) root).onBackPressed();
 			else if (root instanceof InventoryPane) ((InventoryPane) root).apiCancelSelection();
 			else if (Game.scene() instanceof GameScene) GameScene.cancel();
-			else throw new IllegalArgumentException("No window to dismiss");
+			else throw new InvalidActionException("No window to dismiss");
 			return;
 		}
 		if (!(Game.scene() instanceof GameScene) || Dungeon.hero == null || !Dungeon.hero.isAlive()) {
-			throw new IllegalArgumentException("Not in an active game; use visible UI buttons");
+			throw new InvalidActionException("Not in an active game; use visible UI buttons");
 		}
 		if (root instanceof Window || GameScene.interfaceBlockingHero()) {
-			throw new IllegalArgumentException("A menu requires input; use its buttons or back");
+			throw new InvalidActionException("A menu requires input; use its buttons or back");
 		}
-		if (GameScene.apiTargetPrompt() != null && !type.equals("cell")) {
-			throw new IllegalArgumentException("Choose a target with cell, or cancel with back");
+		if (GameScene.apiTargetPrompt() != null && !(command instanceof CellAction)) {
+			throw new InvalidActionException("Choose a target with cell, or cancel with back");
 		}
-		switch (type) {
-			case "talent": {
-				String name = command.getString("name", "");
-				Talent selected = null;
-				for (int tier = 0; tier < Dungeon.hero.talents.size(); tier++) {
-					for (Talent talent : Dungeon.hero.talents.get(tier).keySet()) {
-						if (talent.title().equals(name) && Dungeon.hero.talentPointsAvailable(tier+1) > 0
-								&& Dungeon.hero.pointsInTalent(talent) < talent.maxPoints()) selected = talent;
-					}
+		if (command instanceof TalentAction) {
+			String name = ((TalentAction) command).name;
+			Talent selected = null;
+			for (int tier = 0; tier < Dungeon.hero.talents.size(); tier++) {
+				for (Talent talent : Dungeon.hero.talents.get(tier).keySet()) {
+					if (talent.title().equals(name) && Dungeon.hero.talentPointsAvailable(tier+1) > 0
+							&& Dungeon.hero.pointsInTalent(talent) < talent.maxPoints()) selected = talent;
 				}
-				if (selected == null) throw new IllegalArgumentException("Talent is not available");
-				Dungeon.hero.upgradeTalent(selected);
-				break;
 			}
-			case "cell": {
-				int cell = command.getInt("cell", -1);
-				if (cell < 0 || cell >= Dungeon.level.length()) throw new IllegalArgumentException("Invalid cell");
-				GameScene.handleCell(cell);
-				break;
+			if (selected == null) throw new InvalidActionException("Talent is not available");
+			Dungeon.hero.upgradeTalent(selected);
+		} else if (command instanceof CellAction) {
+			int cell = ((CellAction) command).cell;
+			if (cell < 0 || cell >= Dungeon.level.length()) throw new InvalidActionException("Invalid cell");
+			GameScene.handleCell(cell);
+		} else if (command instanceof WaitAction) {
+			Dungeon.hero.rest(false);
+		} else if (command instanceof SearchAction) {
+			Dungeon.hero.search(true);
+		} else if (command instanceof InspectAction) {
+			int cell = ((InspectAction) command).cell;
+			if (cell < 0 || cell >= Dungeon.level.length() || !Dungeon.level.heroFOV[cell]) {
+				throw new InvalidActionException("Inspect requires a currently visible cell");
 			}
-			case "wait": Dungeon.hero.rest(false); break;
-			case "search": Dungeon.hero.search(true); break;
-			case "inspect": {
-				int cell = command.getInt("cell", -1);
-				if (cell < 0 || cell >= Dungeon.level.length() || !Dungeon.level.heroFOV[cell]) {
-					throw new IllegalArgumentException("Inspect requires a currently visible cell");
-				}
-				GameScene.examineCell(cell);
-				break;
+			GameScene.examineCell(cell);
+		} else if (command instanceof ItemAction) {
+			Item item = observation.items.get(((ItemAction) command).id);
+			boolean held = false;
+			for (Item candidate : Dungeon.hero.belongings) if (candidate == item) held = true;
+			String action = ((ItemAction) command).action;
+			if (!held || item == null || !item.actions(Dungeon.hero).contains(action)) {
+				throw new InvalidActionException("Item/action unavailable; read /state");
 			}
-			case "item": {
-				Item item = observation.items.get(command.getString("id", ""));
-				boolean held = false;
-				for (Item candidate : Dungeon.hero.belongings) if (candidate == item) held = true;
-				String action = command.getString("action", "");
-				if (!held || item == null || !item.actions(Dungeon.hero).contains(action)) {
-					throw new IllegalArgumentException("Item/action unavailable; read /state");
-				}
-				item.execute(Dungeon.hero, action);
-				break;
-			}
-			default: throw new IllegalArgumentException("Unknown action type: " + type);
+			item.execute(Dungeon.hero, action);
+		} else {
+			throw new InvalidActionException("Unknown action type");
 		}
 	}
 
-	private static JsonValue error(String message) {
-		JsonValue result = object();
-		put(result, "error", message);
-		return result;
+	private static ErrorResponse error(ErrorCode code, String message) {
+		return new ErrorResponse(code, message, false);
 	}
 
-	private static void reply(HttpExchange exchange, int status, JsonValue body) throws IOException {
-		byte[] bytes = body.toJson(JsonWriter.OutputType.json).getBytes(StandardCharsets.UTF_8);
+	/** Only our pre-dispatch checks can certify that an action was rejected before execution. */
+	private static final class InvalidActionException extends IllegalArgumentException {
+		InvalidActionException(String message) { super(message); }
+	}
+
+	private static void reply(HttpExchange exchange, int status, Object body) throws IOException {
+		byte[] bytes = ApiJson.MAPPER.writeValueAsBytes(body);
 		exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
 		exchange.getResponseHeaders().set("Cache-Control", "no-store");
 		exchange.sendResponseHeaders(status, bytes.length);
@@ -284,13 +362,13 @@ public final class PlayerApi implements AutoCloseable {
 	}
 
 	private static final class Request {
-		final JsonValue command;
+		final Action command;
 		final CompletableFuture<Response> result = new CompletableFuture<>();
-		Request(JsonValue command) { this.command = command; }
+		Request(Action command) { this.command = command; }
 	}
-	private static final class Response {
+	public static final class Response {
 		final int status;
-		final JsonValue body;
-		Response(int status, JsonValue body) { this.status = status; this.body = body; }
+		final Object body;
+		Response(int status, Object body) { this.status = status; this.body = body; }
 	}
 }

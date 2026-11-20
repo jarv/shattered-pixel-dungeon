@@ -1,6 +1,6 @@
 package com.shatteredpixel.shatteredpixeldungeon.desktop.api;
 
-import com.badlogic.gdx.utils.JsonValue;
+import com.shatteredpixel.shatteredpixeldungeon.desktop.api.ApiModels.MovementReceipt;
 import com.shatteredpixel.shatteredpixeldungeon.ui.ApiUI;
 import org.junit.Test;
 import static org.junit.Assert.*;
@@ -11,10 +11,10 @@ public class MovementTraceTest {
 		trace.begin(3, 0, 54);
 		trace.moved(55);
 		trace.moved(56);
-		JsonValue result = trace.finish(3, 0, 56);
-		assertArrayEquals(new int[]{54,55,56}, result.get("cells").asIntArray());
-		assertTrue(result.getBoolean("same_floor"));
-		assertFalse(result.getBoolean("truncated"));
+		MovementReceipt result = trace.finish(3, 0, 56);
+		assertEquals(java.util.Arrays.asList(54,55,56), result.cells);
+		assertTrue(result.same_floor);
+		assertFalse(result.truncated);
 		assertNull(trace.finish(3, 0, 56));
 	}
 
@@ -22,24 +22,24 @@ public class MovementTraceTest {
 		MovementTrace trace = new MovementTrace();
 		trace.begin(3, 0, 54);
 		trace.moved(55);
-		JsonValue result = trace.finish(3, 0, 55);
-		assertArrayEquals(new int[]{54,55}, result.get("cells").asIntArray());
+		MovementReceipt result = trace.finish(3, 0, 55);
+		assertEquals(java.util.Arrays.asList(54,55), result.cells);
 	}
 
 	@Test public void unexpectedDisplacementIsNotInterpolatedAsWalking() {
 		MovementTrace trace = new MovementTrace();
 		trace.begin(3, 0, 54);
 		trace.moved(100);
-		JsonValue result = trace.finish(3, 0, 100);
-		assertArrayEquals(new int[]{54,100}, result.get("cells").asIntArray());
+		MovementReceipt result = trace.finish(3, 0, 100);
+		assertEquals(java.util.Arrays.asList(54,100), result.cells);
 	}
 
 	@Test public void changedFloorAndResetCannotCertifyOldFloorMovement() {
 		MovementTrace trace = new MovementTrace();
 		trace.begin(3, 0, 54);
-		JsonValue result = trace.finish(4, 0, 20);
-		assertFalse(result.getBoolean("same_floor"));
-		assertArrayEquals(new int[]{54}, result.get("cells").asIntArray());
+		MovementReceipt result = trace.finish(4, 0, 20);
+		assertFalse(result.same_floor);
+		assertEquals(java.util.Arrays.asList(54), result.cells);
 		trace.begin(4, 0, 20);
 		trace.reset();
 		trace.moved(21);
@@ -53,7 +53,7 @@ public class MovementTraceTest {
 			trace.begin(3, 0, 54);
 			ApiUI.heroMoveObserver = trace::moved;
 			ApiUI.heroMoved(55);
-			assertArrayEquals(new int[]{54,55}, trace.finish(3, 0, 55).get("cells").asIntArray());
+			assertEquals(java.util.Arrays.asList(54,55), trace.finish(3, 0, 55).cells);
 			ApiUI.heroMoveObserver = null;
 			ApiUI.heroMoved(56);
 		} finally {

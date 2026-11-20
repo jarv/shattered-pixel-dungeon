@@ -109,6 +109,10 @@ runtime {
 }
 
 dependencies {
+    implementation platform('com.fasterxml.jackson:jackson-bom:2.18.12')
+    implementation 'com.fasterxml.jackson.core:jackson-databind'
+    implementation 'io.swagger.core.v3:swagger-annotations:2.2.28'
+    compileOnly 'jakarta.ws.rs:jakarta.ws.rs-api:3.1.0'
     testImplementation 'junit:junit:4.13.2'
     implementation project(':core')
 
@@ -128,4 +132,49 @@ dependencies {
 
     implementation project(':services:updates:githubUpdates')
     implementation project(':services:news:shatteredNews')
+}
+
+// Documentation tooling is not included in the packaged game.
+sourceSets {
+    apiDocumentation {
+        java.srcDir 'src/apiDocumentation/java'
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+}
+configurations {
+    apiDocumentationImplementation.extendsFrom implementation
+    apiDocsGenerator
+}
+dependencies {
+    apiDocumentationImplementation 'io.swagger.core.v3:swagger-jaxrs2-jakarta:2.2.28'
+    apiDocumentationImplementation 'jakarta.ws.rs:jakarta.ws.rs-api:3.1.0'
+    apiDocsGenerator 'org.openapitools:openapi-generator-cli:7.27.0'
+    testImplementation sourceSets.apiDocumentation.output
+    testImplementation 'io.swagger.core.v3:swagger-jaxrs2-jakarta:2.2.28'
+    testImplementation 'jakarta.ws.rs:jakarta.ws.rs-api:3.1.0'
+    testImplementation 'com.networknt:json-schema-validator:1.5.6'
+}
+
+tasks.register('generateOpenApi', JavaExec) {
+    group = 'documentation'
+    description = 'Generate the player API specification from runtime DTOs and endpoint annotations.'
+    classpath = sourceSets.apiDocumentation.runtimeClasspath
+    mainClass = 'com.shatteredpixel.shatteredpixeldungeon.desktop.api.GenerateOpenApi'
+    args layout.buildDirectory.dir('player-api').get().asFile.absolutePath
+    inputs.files(sourceSets.main.allJava, sourceSets.apiDocumentation.allJava)
+    outputs.files(layout.buildDirectory.file('player-api/openapi.yaml'),
+                  layout.buildDirectory.file('player-api/openapi.json'))
+}
+
+tasks.register('apiDocs', JavaExec) {
+    group = 'documentation'
+    description = 'Build static HTML documentation for the player API (no game launch required).'
+    dependsOn 'generateOpenApi'
+    classpath = configurations.apiDocsGenerator
+    mainClass = 'org.openapitools.codegen.OpenAPIGenerator'
+    args 'generate', '-i', layout.buildDirectory.file('player-api/openapi.yaml').get().asFile.absolutePath,
+         '-g', 'html2', '-o', layout.buildDirectory.dir('player-api/html').get().asFile.absolutePath
+    inputs.file(layout.buildDirectory.file('player-api/openapi.yaml'))
+    outputs.dir(layout.buildDirectory.dir('player-api/html'))
 }
