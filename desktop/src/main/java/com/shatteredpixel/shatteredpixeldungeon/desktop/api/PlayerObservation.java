@@ -326,11 +326,13 @@ final class PlayerObservation {
 		return tile;
 	}
 
-	private <T extends ItemState> T item(Item item, T value) {
+	<T extends ItemState> T item(Item item, T value) {
 		value.name = item.title();
 		value.description = item.info();
 		value.quantity = item.quantity();
 		value.status = item.status();
+		value.sprite_id = item.image();
+		value.visible_upgrade = item.visiblyUpgraded();
 		value.identified = item.isIdentified();
 		value.upgradable = item.isUpgradable();
 		value.curse_known = item.cursedKnown;

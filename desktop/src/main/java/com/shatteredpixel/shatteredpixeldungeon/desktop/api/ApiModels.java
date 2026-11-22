@@ -216,6 +216,10 @@ public final class ApiModels {
 		public String description;
 		public int quantity;
 		public String status;
+		@Schema(description = "Player-visible item image index in the pinned game's ItemSpriteSheet; not a hidden item identity.")
+		public int sprite_id;
+		@Schema(description = "Knowledge-filtered base upgrade shown in the item title. Zero also covers unidentified upgrades, not proof of an unupgraded item.")
+		public int visible_upgrade;
 		public boolean identified;
 		public boolean upgradable;
 		public boolean curse_known;

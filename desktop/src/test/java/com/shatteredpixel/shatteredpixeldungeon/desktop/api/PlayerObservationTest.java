@@ -78,6 +78,28 @@ public class PlayerObservationTest {
 		assertEquals(3, stats.size);
 	}
 
+	@Test public void itemSpriteUsesVisibleAppearanceWithoutRevealingCurse() {
+		Item item = new Item() {
+			@Override public int image() { return 42; }
+			@Override public String name() { return "unknown item"; }
+			@Override public String title() { return name(); }
+			@Override public String info() { return "Visible description"; }
+		};
+		item.image = 99; // The visible image override must win over the raw field.
+		item.cursed = true;
+		item.cursedKnown = false;
+		item.level(3);
+		item.levelKnown = false;
+		ApiModels.ItemState observed = new PlayerObservation().item(item, new ApiModels.ItemState());
+		assertEquals(42, observed.sprite_id);
+		assertEquals(false, observed.known_cursed);
+		assertEquals(false, observed.curse_known);
+		assertEquals(0, observed.visible_upgrade);
+		item.levelKnown = true;
+		assertEquals(3, new PlayerObservation().item(item, new ApiModels.ItemState()).visible_upgrade);
+		ApiContractTest.assertConforms("ItemState", observed);
+	}
+
 	@Test public void mappingExportsUnseenTerrainWithoutMakingItVisible() {
 		PlayerObservation observation = new PlayerObservation();
 		assertEquals(null, tile(observation, 100));
