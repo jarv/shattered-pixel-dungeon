@@ -28,6 +28,7 @@ import com.shatteredpixel.shatteredpixeldungeon.windows.WndInfoCell;
 import com.watabou.noosa.Game;
 import com.watabou.noosa.Gizmo;
 import com.watabou.noosa.Group;
+import com.watabou.noosa.Image;
 
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
@@ -43,6 +44,22 @@ final class PlayerObservation {
 	final Map<String, Button> buttons = new LinkedHashMap<>();
 	private final IdentityHashMap<Level, Map<Integer, Tile>> memories = new IdentityHashMap<>();
 	private Hero lastHero;
+
+	static BuffState buffState(Buff buff) {
+		BuffState state = new BuffState();
+		state.name = buff.name();
+		state.description = buff.desc();
+		state.icon_id = buff.icon();
+		// Match BuffIcon.refresh without loading an atlas or querying hidden state.
+		Image icon = new Image();
+		buff.tintIcon(icon);
+		if (icon.rm != 1 || icon.gm != 1 || icon.bm != 1 ||
+				icon.ra != 0 || icon.ga != 0 || icon.ba != 0) {
+			state.icon_tint = new float[]{icon.rm, icon.gm, icon.bm, icon.ra, icon.ga, icon.ba};
+		}
+		icon.destroy();
+		return state;
+	}
 
 	static Gizmo inputRoot() {
 		Group scene = Game.scene();
@@ -129,10 +146,7 @@ final class PlayerObservation {
 		player.gold = Dungeon.gold;
 		for (Buff buff : hero.buffs()) {
 			if (buff.icon() == BuffIndicator.NONE) continue;
-			BuffState b = new BuffState();
-			b.name = buff.name();
-			b.description = buff.desc();
-			player.buffs.add(b);
+			player.buffs.add(buffState(buff));
 		}
 		for (int tier = 0; tier < hero.talents.size(); tier++) {
 			if (hero.lvl + 1 < Talent.tierLevelThresholds[tier+1]) continue;

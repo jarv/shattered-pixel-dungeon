@@ -196,6 +196,11 @@ public final class ApiModels {
 	public static final class BuffState {
 		public String name;
 		public String description;
+		@Schema(description = "Player-visible icon index in interfaces/buffs.png (7px cells) or large_buffs.png (16px cells).",
+				minimum = "0", maximum = "126")
+		public Integer icon_id;
+		@Schema(description = "Optional game icon color transform: RGB multipliers followed by RGB additions; output = source * multiplier + addition. No expiry animation.")
+		public float[] icon_tint;
 	}
 
 	@Schema(requiredProperties = {"name", "description", "tier", "points", "max_points", "available"})

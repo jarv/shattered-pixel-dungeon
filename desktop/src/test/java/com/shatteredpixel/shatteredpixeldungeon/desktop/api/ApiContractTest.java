@@ -160,7 +160,7 @@ public class ApiContractTest {
 				Class<?> type = field.getType();
 				assertTrue(field.toString(), type.isPrimitive() || type == String.class
 						|| type == Integer.class || type == Long.class || type == Boolean.class
-						|| type == int[].class || type.getEnclosingClass() == ApiModels.class
+						|| type == int[].class || type == float[].class || type.getEnclosingClass() == ApiModels.class
 						|| (type == List.class && field.getGenericType().getTypeName()
 						.matches("java.util.List<(java.lang.(String|Integer)|.*ApiModels\\$[A-Za-z]+)>")));
 			}
